@@ -84,20 +84,45 @@ async def analyze_csv(file: UploadFile = File(...)):
     try:
         # Read CSV file
         contents = await file.read()
-        df = pd.read_csv(io.StringIO(contents.decode('utf-8')))
+        
+        # Try different parsing approaches
+        try:
+            df = pd.read_csv(io.StringIO(contents.decode('utf-8')))
+        except:
+            # Try with different delimiter or skip bad lines
+            df = pd.read_csv(
+                io.StringIO(contents.decode('utf-8')),
+                on_bad_lines='skip',
+                skipinitialspace=True
+            )
         
         # Check if 'text' column exists
         if 'text' not in df.columns:
+            # Try to find a column with text-like name
+            text_cols = [col for col in df.columns if 'text' in col.lower() or 'feedback' in col.lower() or 'comment' in col.lower()]
+            if text_cols:
+                df = df.rename(columns={text_cols[0]: 'text'})
+            else:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"CSV must have a 'text' column. Found columns: {', '.join(df.columns)}"
+                )
+        
+        # Remove any rows where text is NaN or empty
+        df = df.dropna(subset=['text'])
+        df = df[df['text'].astype(str).str.strip() != '']
+        
+        if len(df) == 0:
             raise HTTPException(
-                status_code=400, 
-                detail="CSV must have a 'text' column"
+                status_code=400,
+                detail="No valid text data found in CSV"
             )
         
         # Analyze each row
         results = []
         for idx, row in df.iterrows():
-            text = str(row['text'])
-            if text.strip():
+            text = str(row['text']).strip()
+            if text:
                 analysis = analyze_sentiment(text)
                 results.append(analysis)
         
@@ -115,8 +140,13 @@ async def analyze_csv(file: UploadFile = File(...)):
             "results": results
         }
     
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error processing file: {str(e)}. Make sure your CSV has a 'text' column with one feedback per row."
+        )
 
 if __name__ == "__main__":
     import uvicorn
