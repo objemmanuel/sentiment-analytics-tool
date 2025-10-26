@@ -13,7 +13,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
-        "http://localhost:3000", 
+        "https://sentiment-analytics-tool.vercel.app/", 
         "https://*.vercel.app",  # Allow all Vercel deployments
         "*"  # Remove this in production and specify exact URL
     ],
